@@ -771,14 +771,13 @@ void AdjustLengths() {
             //       Decrease <DIPTHONG> by 2
             index = phonemeindex[X-1]; // prior phoneme;
 
-            // FIXME: The debug code here breaks the rule.
-            // prior phoneme a stop consonant>
-            if((flags[index] & FLAG_STOPCONS) != 0) 
+            if((flags[index] & FLAG_STOPCONS) != 0) {
                 drule_pre("<LIQUID CONSONANT> <DIPTHONG> - decrease by 2",X);
-            
-            phonemeLength[X] -= 2; // 20ms
-            drule_post(X);
-         }
+
+                phonemeLength[X] -= 2; // 20ms
+                drule_post(X);
+            }
+        }
 
         ++loopIndex;
     }

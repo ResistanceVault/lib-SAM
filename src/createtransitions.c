@@ -101,9 +101,10 @@ void Write(unsigned char p, unsigned char Y, unsigned char value)
 // linearly interpolate values
 void interpolate(unsigned char width, unsigned char table, unsigned char frame, char mem53)
 {
-    unsigned char sign      = (mem53 < 0);
-    unsigned char remainder = abs(mem53) % width;
-    unsigned char div       = mem53 / width;
+    signed char delta      = (signed char)mem53;
+    unsigned char sign      = (delta < 0);
+    unsigned char remainder = (unsigned char)(abs(delta) % width);
+    unsigned char div       = (unsigned char)(delta / width);
 
     unsigned char error = 0;
     unsigned char pos   = width;
