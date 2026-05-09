@@ -6,6 +6,7 @@
 
 unsigned char A, X;
 extern int debug;
+static int reciter_truncated = 0;
 
 static unsigned char inputtemp[256];   // secure copy of input tab36096
 
@@ -95,6 +96,7 @@ int TextToPhonemes(unsigned char *input) {
 	unsigned char Y;
 
 	int r;
+    reciter_truncated = 0;
 
 	inputtemp[0] = ' ';
 
@@ -140,6 +142,7 @@ pos36554:
         inputtemp[X] = ' ';
         X = ++mem56;
         if (X > 120) {
+            reciter_truncated = 1;
             input[X] = 155;
             return 1;
         }
@@ -300,4 +303,9 @@ pos37184:
         } while (r == 0);
     } while (A == '%');
 	return 0;
+}
+
+int ReciterWasTruncated(void)
+{
+    return reciter_truncated;
 }

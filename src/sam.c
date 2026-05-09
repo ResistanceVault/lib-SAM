@@ -36,9 +36,11 @@ unsigned char phonemeLengthOutput[60]; //tab47416
 // contains the final soundbuffer
 int bufferpos=0;
 char *buffer = NULL;
+int bufferlength = 0;
+static int buffercapacity = 0;
 
 
-void SetInput(unsigned char *_input)
+void SetInput(const unsigned char *_input)
 {
 	int i, l;
 	l = strlen((char*)_input);
@@ -53,8 +55,59 @@ void SetPitch(unsigned char _pitch) {pitch = _pitch;};
 void SetMouth(unsigned char _mouth) {mouth = _mouth;};
 void SetThroat(unsigned char _throat) {throat = _throat;};
 void EnableSingmode() {singmode = 1;};
-char* GetBuffer(){return buffer;};
-int GetBufferLength(){return bufferpos;};
+void SetSingMode(int enabled) {singmode = enabled ? 1 : 0;};
+void ResetSamParameters(void)
+{
+    speed = 72;
+    pitch = 64;
+    mouth = 128;
+    throat = 128;
+    singmode = 0;
+}
+const char* GetBuffer(){return buffer;};
+int GetBufferLength(){return bufferlength;};
+
+void ReleaseBuffer(void)
+{
+    if (buffer != NULL) {
+        free(buffer);
+        buffer = NULL;
+    }
+    buffercapacity = 0;
+    bufferlength = 0;
+    bufferpos = 0;
+}
+
+int EnsureBufferCapacity(int required_samples)
+{
+    int new_capacity;
+    char *new_buffer;
+
+    if (required_samples <= buffercapacity) {
+        return 1;
+    }
+
+    new_capacity = buffercapacity > 0 ? buffercapacity : 22050;
+    while (new_capacity < required_samples) {
+        if (new_capacity > (1 << 27)) {
+            return 0;
+        }
+        new_capacity *= 2;
+    }
+
+    new_buffer = realloc(buffer, (size_t)new_capacity);
+    if (new_buffer == NULL) {
+        return 0;
+    }
+
+    if (new_capacity > buffercapacity) {
+        memset(new_buffer + buffercapacity, 128, (size_t)(new_capacity - buffercapacity));
+    }
+
+    buffer = new_buffer;
+    buffercapacity = new_capacity;
+    return 1;
+}
 
 void Init();
 int Parser1();
@@ -74,8 +127,11 @@ void Init() {
 	SetMouthThroat( mouth, throat);
 
 	bufferpos = 0;
-	// TODO, check for free the memory, 10 seconds of output should be more than enough
-	buffer = malloc(22050*10); 
+    bufferlength = 0;
+    if (!EnsureBufferCapacity(22050)) {
+        return;
+    }
+    memset(buffer, 128, (size_t)buffercapacity);
 
 	for(i=0; i<256; i++) {
 		stress[i] = 0;
@@ -93,8 +149,8 @@ void Init() {
 int SAMMain() {
 	unsigned char X = 0; //!! is this intended like this?
 	Init();
-    /* FIXME: At odds with assignment in Init() */
-	phonemeindex[255] = 32; //to prevent buffer overflow
+    if (buffer == NULL) return 0;
+	phonemeindex[255] = END;
 
 	if (!Parser1()) return 0;
 	if (debug) PrintPhonemes(phonemeindex, phonemeLength, stress);
@@ -632,7 +688,7 @@ void AdjustLengths() {
 			index = phonemeindex[X];
 
 			// test for fricative/unvoiced or not voiced
-			if(!(flags[index] & FLAG_FRICATIVE) || (flags[index] & FLAG_VOICED)) {     //nochmal überprüfen
+			if(!(flags[index] & FLAG_FRICATIVE) || (flags[index] & FLAG_VOICED)) {     //nochmal Ã¼berprÃ¼fen
 				unsigned char A = phonemeLength[X];
 				// change phoneme length to (length * 1.5) + 1
                 drule_pre("Lengthen <FRICATIVE> or <VOICED> between <VOWEL> and <PUNCTUATION> by 1.5",X);

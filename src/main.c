@@ -1,278 +1,418 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <string.h>
+#include <sys/stat.h>
 
-#include "reciter.h"
-#include "sam.h"
-#include "debug.h"
+#include "say_backend.h"
 
-#ifdef USESDL
-#include <SDL.h>
-#include <SDL_audio.h>
-#endif
-
-
-// Approximations of some Windows functions to ease portability
-#if defined __GNU_LIBRARY__ || defined __GLIBC__
-static int min(int l, int r) { return l < r ? l : r; }
-static void strcat_s(char * dest, int size, char * str) {
-    unsigned int dlen = strlen(dest);
-    if (dlen >= size-1) return;
-    strncat(dest+dlen, str, size - dlen - 1);
-}
-void fopen_s(FILE ** f, const char * filename, const char * mode) {
-    *f = fopen(filename,mode);
-}
-#endif
-
-void WriteWav(char* filename, char* buffer, int bufferlength)
-{
-	unsigned int filesize;
-	unsigned int fmtlength = 16;
-	unsigned short int format=1; //PCM
-	unsigned short int channels=1;
-	unsigned int samplerate = 22050;
-	unsigned short int blockalign = 1;
-	unsigned short int bitspersample=8;
-
-	FILE *file;
-	fopen_s(&file, filename, "wb");
-	if (file == NULL) return;
-	//RIFF header
-	fwrite("RIFF", 4, 1,file);
-	filesize=bufferlength + 12 + 16 + 8 - 8;
-	fwrite(&filesize, 4, 1, file);
-	fwrite("WAVE", 4, 1, file);
-
-	//format chunk
-	fwrite("fmt ", 4, 1, file);
-	fwrite(&fmtlength, 4, 1, file);
-	fwrite(&format, 2, 1, file);
-	fwrite(&channels, 2, 1, file);
-	fwrite(&samplerate, 4, 1, file);
-	fwrite(&samplerate, 4, 1, file); // bytes/second
-	fwrite(&blockalign, 2, 1, file);
-	fwrite(&bitspersample, 2, 1, file);
-
-	//data chunk
-	fwrite("data", 4, 1, file);
-	fwrite(&bufferlength, 4, 1, file);
-	fwrite(buffer, bufferlength, 1, file);
-
-	fclose(file);
-}
-
-void PrintUsage()
-{
-	printf("usage: sam [options] Word1 Word2 ....\n");
-	printf("options\n");
-	printf("	-phonetic 		enters phonetic mode. (see below)\n");
-	printf("	-pitch number		set pitch value (default=64)\n");
-	printf("	-speed number		set speed value (default=72)\n");
-	printf("	-throat number		set throat value (default=128)\n");
-	printf("	-mouth number		set mouth value (default=128)\n");
-	printf("	-wav filename		output to wav instead of libsdl\n");
-	printf("	-sing			special treatment of pitch\n");
-	printf("	-debug			print additional debug messages\n");
-	printf("\n");
-
-	
-	printf("     VOWELS                            VOICED CONSONANTS	\n");
-	printf("IY           f(ee)t                    R        red		\n");
-	printf("IH           p(i)n                     L        allow		\n");
-	printf("EH           beg                       W        away		\n");
-	printf("AE           Sam                       W        whale		\n");
-	printf("AA           pot                       Y        you		\n");
-	printf("AH           b(u)dget                  M        Sam		\n");
-	printf("AO           t(al)k                    N        man		\n");
-	printf("OH           cone                      NX       so(ng)		\n");
-	printf("UH           book                      B        bad		\n");
-	printf("UX           l(oo)t                    D        dog		\n");
-	printf("ER           bird                      G        again		\n");
-	printf("AX           gall(o)n                  J        judge		\n");
-	printf("IX           dig(i)t                   Z        zoo		\n");
-	printf("				       ZH       plea(s)ure	\n");
-	printf("   DIPHTHONGS                          V        seven		\n");
-	printf("EY           m(a)de                    DH       (th)en		\n");
-	printf("AY           h(igh)						\n");
-	printf("OY           boy						\n");
-	printf("AW           h(ow)                     UNVOICED CONSONANTS	\n");
-	printf("OW           slow                      S         Sam		\n");
-	printf("UW           crew                      Sh        fish		\n");
-	printf("                                       F         fish		\n");
-	printf("                                       TH        thin		\n");
-	printf(" SPECIAL PHONEMES                      P         poke		\n");
-	printf("UL           sett(le) (=AXL)           T         talk		\n");
-	printf("UM           astron(omy) (=AXM)        K         cake		\n");
-	printf("UN           functi(on) (=AXN)         CH        speech		\n");
-	printf("Q            kitt-en (glottal stop)    /H        a(h)ead	\n");	
-}
-
-#ifdef USESDL
-
-int pos = 0;
-void MixAudio(void *unused, Uint8 *stream, int len)
-{
-	int bufferpos = GetBufferLength();
-	char *buffer = GetBuffer();
-	int i;
-	if (pos >= bufferpos) return;
-	if ((bufferpos-pos) < len) len = (bufferpos-pos);
-	for(i=0; i<len; i++)
-	{
-		stream[i] = buffer[pos];
-		pos++;
-	}
-}
-
-
-void OutputSound()
-{
-	int bufferpos = GetBufferLength();
-	bufferpos /= 50;
-	SDL_AudioSpec fmt;
-
-	fmt.freq = 22050;
-	fmt.format = AUDIO_U8;
-	fmt.channels = 1;
-	fmt.samples = 2048;
-	fmt.callback = MixAudio;
-	fmt.userdata = NULL;
-
-	/* Open the audio device and start playing sound! */
-	if ( SDL_OpenAudio(&fmt, NULL) < 0 ) 
-	{
-		printf("Unable to open audio: %s\n", SDL_GetError());
-		exit(1);
-	}
-	SDL_PauseAudio(0);
-	//SDL_Delay((bufferpos)/7);
-	
-	while (pos < bufferpos)
-	{
-		SDL_Delay(100);
-	}
-	
-	SDL_CloseAudio();
-}
-
+#ifdef _WIN32
+#define STAT_STRUCT struct _stat
+#define STAT_FUNC _stat
 #else
-
-void OutputSound() {}
-
-#endif	
-
-int debug = 0;
-
-int main(int argc, char **argv)
-{
-	int i;
-	int phonetic = 0;
-
-	char* wavfilename = NULL;
-	unsigned char input[256];
-	
-	memset(input, 0, 256);
-
-	if (argc <= 1)
-	{
-		PrintUsage();
-		return 1;
-	}
-
-	i = 1;
-	while(i < argc)
-	{
-		if (argv[i][0] != '-')
-		{
-			strcat_s((char*)input, 256, argv[i]);
-			strcat_s((char*)input, 256, " ");
-		} else
-		{
-			if (strcmp(&argv[i][1], "wav")==0)
-			{
-				wavfilename = argv[i+1];
-				i++;
-			} else
-			if (strcmp(&argv[i][1], "sing")==0)
-			{
-				EnableSingmode();
-			} else
-			if (strcmp(&argv[i][1], "phonetic")==0)
-			{
-				phonetic = 1;
-			} else
-			if (strcmp(&argv[i][1], "debug")==0)
-			{
-				debug = 1;
-			} else
-			if (strcmp(&argv[i][1], "pitch")==0)
-			{
-				SetPitch((unsigned char)min(atoi(argv[i+1]),255));
-				i++;
-			} else
-			if (strcmp(&argv[i][1], "speed")==0)
-			{
-				SetSpeed((unsigned char)min(atoi(argv[i+1]),255));
-				i++;
-			} else
-			if (strcmp(&argv[i][1], "mouth")==0)
-			{
-				SetMouth((unsigned char)min(atoi(argv[i+1]),255));
-				i++;
-			} else
-			if (strcmp(&argv[i][1], "throat")==0)
-			{
-				SetThroat((unsigned char)min(atoi(argv[i+1]),255));
-				i++;
-			} else
-			{
-				PrintUsage();
-				return 1;
-			}
-		}
-		
-		i++;
-	} //while
-
-	for(i=0; input[i] != 0; i++)
-		input[i] = (unsigned char)toupper((int)input[i]);
-
-	if (debug)
-	{
-		if (phonetic) printf("phonetic input: %s\n", input);
-		else printf("text input: %s\n", input); 
-	}
-	
-	if (!phonetic)
-	{
-		strcat_s((char*)input, 256, "[");
-		if (!TextToPhonemes(input)) return 1;
-		if (debug)
-			printf("phonetic input: %s\n", input);
-	} else strcat_s((char*)input, 256, "\x9b");
-
-#ifdef USESDL
-	if ( SDL_Init(SDL_INIT_AUDIO) < 0 ) 
-	{
-		printf("Unable to init SDL: %s\n", SDL_GetError());
-		exit(1);
-	}
-	atexit(SDL_Quit);
+#define STAT_STRUCT struct stat
+#define STAT_FUNC stat
 #endif
 
-	SetInput(input);
-	if (!SAMMain())
-	{
-		PrintUsage();
-		return 1;
-	}
+typedef struct {
+    say_options_t options;
+    const char *output_path;
+    const char *debug_report_path;
+    int dry_run;
+    const char **positionals;
+    int positional_count;
+} cli_config_t;
 
-	if (wavfilename != NULL) 
-		WriteWav(wavfilename, GetBuffer(), GetBufferLength()/50);
-	else
-		OutputSound();
+static void print_usage(FILE *stream)
+{
+    fprintf(stream, "usage: tts <text-or-input-file> -o <output.{raw|aiff|wav}> [--lang en] [--rate 44100]\n");
+    fprintf(stream, "       tts --phonemes \"<sam-phoneme-string>\" -o out.wav\n");
+    fprintf(stream, "       tts \"Debug me\" --debug-report report.txt --dry-run\n");
+    fprintf(stream, "\n");
+    fprintf(stream, "flags:\n");
+    fprintf(stream, "  -o, --output <path>        output path (.raw, .wav, .aiff)\n");
+    fprintf(stream, "  --lang <en>                compatibility language flag\n");
+    fprintf(stream, "  --rate <44100>             compatibility sample-rate flag\n");
+    fprintf(stream, "  --frame-ms <5-10>          compatibility frame metadata\n");
+    fprintf(stream, "  --phonemes                 interpret input as SAM phonemes\n");
+    fprintf(stream, "  --debug-report <path|->    write a human-readable debug report\n");
+    fprintf(stream, "  --dry-run                  validate input and skip audio output\n");
+    fprintf(stream, "  --gain <number>            apply post-synthesis linear gain\n");
+    fprintf(stream, "  --phone                    apply the telephone effect\n");
+    fprintf(stream, "  --speed <0-255>            SAM speed parameter\n");
+    fprintf(stream, "  --pitch <0-255>            SAM pitch parameter\n");
+    fprintf(stream, "  --mouth <0-255>            SAM mouth parameter\n");
+    fprintf(stream, "  --throat <0-255>           SAM throat parameter\n");
+    fprintf(stream, "  --sing                     enable SAM sing mode\n");
+    fprintf(stream, "  -h, --help                 show this help\n");
+}
 
-	return 0;
+static int parse_int_value(const char *name, const char *value, int *out)
+{
+    char *end = NULL;
+    long parsed;
+
+    errno = 0;
+    parsed = strtol(value, &end, 10);
+    if (errno != 0 || end == value || *end != '\0') {
+        fprintf(stderr, "error: invalid numeric value for %s\n", name);
+        return 0;
+    }
+
+    *out = (int)parsed;
+    return 1;
+}
+
+static int parse_double_value(const char *name, const char *value, double *out)
+{
+    char *end = NULL;
+    double parsed;
+
+    errno = 0;
+    parsed = strtod(value, &end);
+    if (errno != 0 || end == value || *end != '\0') {
+        fprintf(stderr, "error: invalid numeric value for %s\n", name);
+        return 0;
+    }
+
+    *out = parsed;
+    return 1;
+}
+
+static int is_unsupported_legacy_flag(const char *flag)
+{
+    return strcmp(flag, "--centralize") == 0 ||
+           strcmp(flag, "--articulate") == 0 ||
+           strcmp(flag, "--voice-formants") == 0 ||
+           strcmp(flag, "--voice-pitch") == 0 ||
+           strcmp(flag, "--amiga") == 0;
+}
+
+static int infer_format_from_output(const char *path, say_format_t *format)
+{
+    const char *dot = strrchr(path, '.');
+    if (dot == NULL) {
+        return 0;
+    }
+    return say_parse_format_name(dot + 1, format);
+}
+
+static int path_exists(const char *path)
+{
+    STAT_STRUCT info;
+    return path != NULL && STAT_FUNC(path, &info) == 0;
+}
+
+static char *read_text_file(const char *path)
+{
+    FILE *file = NULL;
+    long size;
+    size_t read_size;
+    char *buffer;
+
+    file = fopen(path, "rb");
+    if (file == NULL) {
+        return NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    size = ftell(file);
+    if (size < 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    if (fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    buffer = malloc((size_t)size + 1);
+    if (buffer == NULL) {
+        fclose(file);
+        return NULL;
+    }
+
+    read_size = fread(buffer, 1, (size_t)size, file);
+    fclose(file);
+    if (read_size != (size_t)size) {
+        free(buffer);
+        return NULL;
+    }
+
+    buffer[size] = '\0';
+    return buffer;
+}
+
+static int write_binary_file(const char *path, const unsigned char *data, size_t size)
+{
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) {
+        return 0;
+    }
+
+    if (size > 0 && fwrite(data, 1, size, file) != size) {
+        fclose(file);
+        return 0;
+    }
+
+    fclose(file);
+    return 1;
+}
+
+static int write_text_file(const char *path, const char *text)
+{
+    FILE *file = fopen(path, "wb");
+    size_t size = strlen(text);
+    if (file == NULL) {
+        return 0;
+    }
+
+    if (size > 0 && fwrite(text, 1, size, file) != size) {
+        fclose(file);
+        return 0;
+    }
+
+    fclose(file);
+    return 1;
+}
+
+static char *join_positionals(const cli_config_t *config)
+{
+    int i;
+    size_t total = 0;
+    char *joined;
+    char *cursor;
+
+    for (i = 0; i < config->positional_count; ++i) {
+        total += strlen(config->positionals[i]) + 1;
+    }
+
+    joined = malloc(total > 0 ? total : 1);
+    if (joined == NULL) {
+        return NULL;
+    }
+
+    cursor = joined;
+    for (i = 0; i < config->positional_count; ++i) {
+        size_t length = strlen(config->positionals[i]);
+        memcpy(cursor, config->positionals[i], length);
+        cursor += length;
+        if (i + 1 < config->positional_count) {
+            *cursor++ = ' ';
+        }
+    }
+    *cursor = '\0';
+    return joined;
+}
+
+static int parse_cli(int argc, const char **argv, cli_config_t *config)
+{
+    int i;
+
+    say_default_options(&config->options);
+    config->output_path = NULL;
+    config->debug_report_path = NULL;
+    config->dry_run = 0;
+    config->positionals = argv;
+    config->positional_count = 0;
+
+    for (i = 1; i < argc; ++i) {
+        const char *arg = argv[i];
+        if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) {
+            print_usage(stdout);
+            return -1;
+        }
+
+        if (is_unsupported_legacy_flag(arg)) {
+            fprintf(stderr, "error: %s is unsupported by the SAM backend\n", arg);
+            return 0;
+        }
+
+        if (strcmp(arg, "-o") == 0 || strcmp(arg, "--output") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: missing value for %s\n", arg);
+                return 0;
+            }
+            config->output_path = argv[++i];
+        } else if (strcmp(arg, "--debug-report") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: missing value for %s\n", arg);
+                return 0;
+            }
+            config->debug_report_path = argv[++i];
+        } else if (strcmp(arg, "--dry-run") == 0) {
+            config->dry_run = 1;
+        } else if (strcmp(arg, "--phonemes") == 0) {
+            config->options.phonemes = 1;
+        } else if (strcmp(arg, "--phone") == 0) {
+            config->options.phone = 1;
+        } else if (strcmp(arg, "--sing") == 0) {
+            config->options.sing = 1;
+        } else if (strcmp(arg, "--lang") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: missing value for %s\n", arg);
+                return 0;
+            }
+            config->options.language = argv[++i];
+        } else if (strcmp(arg, "--rate") == 0) {
+            if (i + 1 >= argc || !parse_int_value(arg, argv[i + 1], &config->options.sample_rate)) {
+                return 0;
+            }
+            ++i;
+        } else if (strcmp(arg, "--frame-ms") == 0) {
+            if (i + 1 >= argc || !parse_int_value(arg, argv[i + 1], &config->options.frame_ms)) {
+                return 0;
+            }
+            ++i;
+        } else if (strcmp(arg, "--gain") == 0) {
+            if (i + 1 >= argc || !parse_double_value(arg, argv[i + 1], &config->options.gain)) {
+                return 0;
+            }
+            ++i;
+        } else if (strcmp(arg, "--speed") == 0) {
+            if (i + 1 >= argc || !parse_int_value(arg, argv[i + 1], &config->options.speed)) {
+                return 0;
+            }
+            ++i;
+        } else if (strcmp(arg, "--pitch") == 0) {
+            if (i + 1 >= argc || !parse_int_value(arg, argv[i + 1], &config->options.pitch)) {
+                return 0;
+            }
+            ++i;
+        } else if (strcmp(arg, "--mouth") == 0) {
+            if (i + 1 >= argc || !parse_int_value(arg, argv[i + 1], &config->options.mouth)) {
+                return 0;
+            }
+            ++i;
+        } else if (strcmp(arg, "--throat") == 0) {
+            if (i + 1 >= argc || !parse_int_value(arg, argv[i + 1], &config->options.throat)) {
+                return 0;
+            }
+            ++i;
+        } else if (arg[0] == '-') {
+            fprintf(stderr, "error: unknown flag %s\n", arg);
+            return 0;
+        } else {
+            config->positionals[config->positional_count++] = arg;
+        }
+    }
+
+    if (config->positional_count == 0) {
+        fprintf(stderr, "error: missing input\n");
+        return 0;
+    }
+
+    if (!config->dry_run && config->output_path == NULL) {
+        fprintf(stderr, "error: missing output path\n");
+        return 0;
+    }
+
+    if (config->output_path != NULL) {
+        if (!infer_format_from_output(config->output_path, &config->options.format)) {
+            fprintf(stderr, "error: unsupported output extension\n");
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+int main(int argc, const char **argv)
+{
+    cli_config_t config;
+    say_result_t result;
+    char *input_text = NULL;
+    char *report = NULL;
+    char *error_message = NULL;
+    say_input_source_t input_source = SAY_INPUT_LITERAL;
+    const char *input_label = NULL;
+    int ok;
+    int parse_status;
+
+    if (argc <= 1) {
+        print_usage(stderr);
+        return 1;
+    }
+
+    memset(&config, 0, sizeof(config));
+    memset(&result, 0, sizeof(result));
+
+    parse_status = parse_cli(argc, argv, &config);
+    if (parse_status == 0) {
+        return 1;
+    }
+
+    if (parse_status < 0) {
+        return 0;
+    }
+
+    input_label = config.positional_count == 1 ? config.positionals[0] : NULL;
+
+    if (!config.options.phonemes && config.positional_count == 1 && path_exists(config.positionals[0])) {
+        input_text = read_text_file(config.positionals[0]);
+        if (input_text == NULL) {
+            fprintf(stderr, "error: failed to read input file\n");
+            return 1;
+        }
+        input_source = SAY_INPUT_FILE;
+        input_label = config.positionals[0];
+    } else {
+        input_text = join_positionals(&config);
+        if (input_text == NULL) {
+            fprintf(stderr, "error: out of memory\n");
+            return 1;
+        }
+        input_source = SAY_INPUT_LITERAL;
+        input_label = input_label != NULL ? input_label : input_text;
+    }
+
+    ok = say_synthesize(
+        input_text,
+        &config.options,
+        config.dry_run,
+        input_source,
+        input_label,
+        &result,
+        config.debug_report_path != NULL ? &report : NULL,
+        &error_message
+    );
+
+    if (!ok) {
+        fprintf(stderr, "error: %s\n", error_message != NULL ? error_message : "operation failed");
+        say_free_string(error_message);
+        free(input_text);
+        return 1;
+    }
+
+    if (config.debug_report_path != NULL) {
+        if (strcmp(config.debug_report_path, "-") == 0) {
+            fputs(report != NULL ? report : "", stdout);
+        } else if (!write_text_file(config.debug_report_path, report != NULL ? report : "")) {
+            fprintf(stderr, "error: failed to write debug report\n");
+            say_free_string(report);
+            say_free_result(&result);
+            free(input_text);
+            return 1;
+        }
+    }
+
+    if (!config.dry_run) {
+        if (!write_binary_file(config.output_path, result.data, result.size)) {
+            fprintf(stderr, "error: failed to write output file\n");
+            say_free_string(report);
+            say_free_result(&result);
+            free(input_text);
+            return 1;
+        }
+    }
+
+    say_free_string(report);
+    say_free_result(&result);
+    free(input_text);
+    return 0;
 }

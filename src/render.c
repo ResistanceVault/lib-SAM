@@ -46,7 +46,9 @@ unsigned char trans(unsigned char a, unsigned char b)
 
 // contains the final soundbuffer
 extern int bufferpos;
+extern int bufferlength;
 extern char *buffer;
+extern int EnsureBufferCapacity(int required_samples);
 
 
 
@@ -63,12 +65,20 @@ static const int timetable[5][5] =
 void Output(int index, unsigned char A)
 {
 	static unsigned oldtimetableindex = 0;
+    int sample_index;
 	int k;
 	bufferpos += timetable[oldtimetableindex][index];
 	oldtimetableindex = index;
+    sample_index = bufferpos / 50;
+    if (!EnsureBufferCapacity(sample_index + 5)) {
+        return;
+    }
 	// write a little bit in advance
 	for(k=0; k<5; k++)
-		buffer[bufferpos/50 + k] = (A & 15)*16;
+		buffer[sample_index + k] = (A & 15)*16;
+    if (sample_index + 5 > bufferlength) {
+        bufferlength = sample_index + 5;
+    }
 }
 
 

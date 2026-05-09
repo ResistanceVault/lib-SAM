@@ -1,23 +1,18 @@
-OBJS = reciter.o sam.o render.o main.o debug.o processframes.o createtransitions.o
+BUILD_DIR ?= build
+CONFIG ?= Release
 
-CC = gcc
+.PHONY: all configure build test clean
 
-# libsdl present
-CFLAGS =  -Wall -O2 -DUSESDL `sdl-config --cflags`
-LFLAGS = `sdl-config --libs`
+all: build
 
-# no libsdl present
-#CFLAGS =  -Wall -O2
-#LFLAGS = 
+configure:
+	cmake -S . -B $(BUILD_DIR)
 
-sam: $(OBJS)
-	$(CC) -o sam $(OBJS) $(LFLAGS)
+build: configure
+	cmake --build $(BUILD_DIR) --config $(CONFIG)
 
-%.o: src/%.c
-	$(CC) $(CFLAGS) -c $<
-
-package: 
-	tar -cvzf sam.tar.gz README.md Makefile sing src/
+test: build
+	ctest --test-dir $(BUILD_DIR) -C $(CONFIG) --output-on-failure
 
 clean:
-	rm *.o
+	-cmake --build $(BUILD_DIR) --config $(CONFIG) --target clean
