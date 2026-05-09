@@ -531,12 +531,148 @@ static int say_is_sentence_delimiter(char ch)
     return ch == '.' || ch == '!' || ch == '?' || ch == ';' || ch == ':';
 }
 
+static int say_is_ascii_alpha_numeric(unsigned char ch)
+{
+    return isalpha(ch) || isdigit(ch);
+}
+
 static char say_ascii_upper(char ch)
 {
     if (ch >= 'a' && ch <= 'z') {
         return (char)(ch - 'a' + 'A');
     }
     return ch;
+}
+
+static int say_append_small_number_words(say_string_builder_t *builder, unsigned int value)
+{
+    static const char *const units[] = {
+        "zero", "one", "two", "three", "four",
+        "five", "six", "seven", "eight", "nine"
+    };
+    static const char *const teens[] = {
+        "ten", "eleven", "twelve", "thirteen", "fourteen",
+        "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"
+    };
+    static const char *const tens[] = {
+        "", "", "twenty", "thirty", "forty",
+        "fifty", "sixty", "seventy", "eighty", "ninety"
+    };
+
+    if (value < 10) {
+        return say_sb_append(builder, units[value]);
+    }
+
+    if (value < 20) {
+        return say_sb_append(builder, teens[value - 10]);
+    }
+
+    if (!say_sb_append(builder, tens[value / 10])) {
+        return 0;
+    }
+
+    if ((value % 10) != 0) {
+        if (!say_sb_append(builder, " ")) {
+            return 0;
+        }
+        if (!say_sb_append(builder, units[value % 10])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static int say_append_number_words(say_string_builder_t *builder, unsigned int value)
+{
+    if (value >= 1000) {
+        if (!say_append_small_number_words(builder, value / 1000)) {
+            return 0;
+        }
+        if (!say_sb_append(builder, " thousand")) {
+            return 0;
+        }
+        value %= 1000;
+        if (value != 0) {
+            if (!say_sb_append(builder, " ")) {
+                return 0;
+            }
+        }
+    }
+
+    if (value >= 100) {
+        if (!say_append_small_number_words(builder, value / 100)) {
+            return 0;
+        }
+        if (!say_sb_append(builder, " hundred")) {
+            return 0;
+        }
+        value %= 100;
+        if (value != 0) {
+            if (!say_sb_append(builder, " ")) {
+                return 0;
+            }
+        }
+    }
+
+    if (value != 0) {
+        return say_append_small_number_words(builder, value);
+    }
+
+    return 1;
+}
+
+static int say_append_expanded_number(
+    say_string_builder_t *builder,
+    const unsigned char *digits,
+    size_t length,
+    int *in_space
+)
+{
+    unsigned int value = 0;
+    size_t i;
+    say_string_builder_t number_builder;
+    char *expanded;
+
+    if (length < 2 || length > 4) {
+        if (!say_sb_append_n(builder, (const char *)digits, length)) {
+            return 0;
+        }
+        *in_space = 0;
+        return 1;
+    }
+
+    for (i = 0; i < length; ++i) {
+        value = value * 10u + (unsigned int)(digits[i] - '0');
+    }
+
+    if (value < 10 || value > 9999) {
+        if (!say_sb_append_n(builder, (const char *)digits, length)) {
+            return 0;
+        }
+        *in_space = 0;
+        return 1;
+    }
+
+    say_sb_init(&number_builder);
+    if (!say_append_number_words(&number_builder, value)) {
+        say_sb_free(&number_builder);
+        return 0;
+    }
+
+    expanded = say_sb_take(&number_builder);
+    if (expanded == NULL) {
+        return 0;
+    }
+
+    if (!say_sb_append(builder, expanded)) {
+        free(expanded);
+        return 0;
+    }
+
+    free(expanded);
+    *in_space = 0;
+    return 1;
 }
 
 static char *say_normalize_text(const char *input)
@@ -549,6 +685,27 @@ static char *say_normalize_text(const char *input)
 
     while (*cursor != '\0') {
         unsigned char ch = *cursor++;
+        if (isdigit(ch)) {
+            const unsigned char *digit_start = cursor - 1;
+            const unsigned char *digit_end = digit_start;
+            unsigned char prev = digit_start > (const unsigned char *)input ? digit_start[-1] : '\0';
+            unsigned char next;
+
+            while (isdigit(*digit_end)) {
+                ++digit_end;
+            }
+            next = *digit_end;
+
+            if (!say_is_ascii_alpha_numeric(prev) && !say_is_ascii_alpha_numeric(next)) {
+                if (!say_append_expanded_number(&builder, digit_start, (size_t)(digit_end - digit_start), &in_space)) {
+                    say_sb_free(&builder);
+                    return NULL;
+                }
+                cursor = digit_end;
+                continue;
+            }
+        }
+
         if (isspace(ch)) {
             if (!in_space) {
                 if (!say_sb_append_n(&builder, " ", 1)) {

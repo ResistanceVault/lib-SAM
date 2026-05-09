@@ -78,6 +78,17 @@ def main() -> int:
         assert "Chunk 1" in debug.stdout
         assert "Selected output format: raw" in debug.stdout
 
+        numbers = {
+            "10": "ten",
+            "21": "twenty one",
+            "105": "one hundred five",
+            "2026": "two thousand twenty six",
+            "9999": "nine thousand nine hundred ninety nine",
+        }
+        for raw, expanded in numbers.items():
+            report = run(repo, str(tts), raw, "--debug-report", "-", "--dry-run")
+            assert f"Normalized text: {expanded}" in report.stdout
+
         long_text = " ".join(["This is a chunking regression test sentence."] * 40)
         long_debug = run(repo, str(tts), long_text, "--debug-report", "-", "--dry-run")
         assert "Chunk 2" in long_debug.stdout
@@ -102,6 +113,7 @@ assert(info.channels == 1)
 assert(info.bits_per_sample == 16)
 local report = say.debug_report('Debug library', { frame_ms = 7 })
 assert(report:find('Chunk 1', 1, true))
+assert(say.debug_report('2026'):find('Normalized text: two thousand twenty six', 1, true))
 local defaults = say.default_options()
 assert(defaults.language == 'en')
 assert(defaults.sample_rate == 44100)
