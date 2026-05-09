@@ -92,6 +92,9 @@ def main() -> int:
         pronunciations = {
             "alive": "AXLAY5V",
             "chaos": "KEY5AAS",
+            "compos": "KAHMPOWZ",
+            "demos": "DIHMOWZ",
+            "invited": "IHNVAY5TIXD",
             "july": "JUWLAY5",
             "outside": "AWTSAY5D",
             "inside": "IHNSAY5D",
@@ -129,6 +132,9 @@ assert(report:find('Chunk 1', 1, true))
 assert(say.debug_report('2026'):find('Normalized text: two thousand twenty six', 1, true))
 assert(say.debug_report('alive'):find('final SAM phoneme string:  AXLAY5V', 1, true))
 assert(say.debug_report('chaos'):find('final SAM phoneme string:  KEY5AAS', 1, true))
+assert(say.debug_report('compos'):find('final SAM phoneme string:  KAHMPOWZ', 1, true))
+assert(say.debug_report('demos'):find('final SAM phoneme string:  DIHMOWZ', 1, true))
+assert(say.debug_report('invited'):find('final SAM phoneme string:  IHNVAY5TIXD', 1, true))
 assert(say.debug_report('july'):find('final SAM phoneme string:  JUWLAY5', 1, true))
 assert(say.debug_report('outside'):find('final SAM phoneme string:  AWTSAY5D', 1, true))
 assert(say.debug_report('Aubervilliers'):find('final SAM phoneme string:  OWBERVIYLYEY5', 1, true))

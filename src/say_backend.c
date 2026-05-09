@@ -585,7 +585,10 @@ static const say_pronunciation_override_t *say_lookup_pronunciation_override(con
         {"arrive", "AXRIHV", "AXRAY5V"},
         {"aubervilliers", "AO4BERVIHLIYERZ", "OWBERVIYLYEY5"},
         {"chaos", "CHAEAAZ", "KEY5AAS"},
+        {"compos", "KAHMPAAS", "KAHMPOWZ"},
+        {"demos", "DIHMAAS", "DIHMOWZ"},
         {"inside", "IHNSIHD", "IHNSAY5D"},
+        {"invited", "IHNVIHTIXD", "IHNVAY5TIXD"},
         {"july", "JUWLIY", "JUWLAY5"},
         {"outside", "AWTSIHD", "AWTSAY5D"},
     };
