@@ -26,6 +26,7 @@
 
 typedef struct {
     char *text;
+    char *reciter_output;
     char *phonemes;
     char *split_kind;
 } say_chunk_t;
@@ -470,9 +471,11 @@ static void say_chunk_list_init(say_chunk_list_t *list)
 static void say_chunk_free(say_chunk_t *chunk)
 {
     free(chunk->text);
+    free(chunk->reciter_output);
     free(chunk->phonemes);
     free(chunk->split_kind);
     chunk->text = NULL;
+    chunk->reciter_output = NULL;
     chunk->phonemes = NULL;
     chunk->split_kind = NULL;
 }
@@ -508,6 +511,7 @@ static int say_chunk_list_push(say_chunk_list_t *list, say_chunk_t *chunk)
 
     list->items[list->count++] = *chunk;
     chunk->text = NULL;
+    chunk->reciter_output = NULL;
     chunk->phonemes = NULL;
     chunk->split_kind = NULL;
     return 1;
@@ -542,6 +546,210 @@ static char say_ascii_upper(char ch)
         return (char)(ch - 'a' + 'A');
     }
     return ch;
+}
+
+static int say_ascii_word_equals(const unsigned char *word, size_t length, const char *candidate)
+{
+    size_t i;
+
+    for (i = 0; i < length; ++i) {
+        if (candidate[i] == '\0') {
+            return 0;
+        }
+        if ((unsigned char)tolower(word[i]) != (unsigned char)candidate[i]) {
+            return 0;
+        }
+    }
+
+    return candidate[length] == '\0';
+}
+
+typedef struct {
+    const char *word;
+    const char *reciter_phonemes;
+    const char *fixed_phonemes;
+} say_pronunciation_override_t;
+
+static int say_append_expanded_number(
+    say_string_builder_t *builder,
+    const unsigned char *digits,
+    size_t length,
+    int *in_space
+);
+
+static const say_pronunciation_override_t *say_lookup_pronunciation_override(const unsigned char *word, size_t length)
+{
+    static const say_pronunciation_override_t overrides[] = {
+        {"alive", "ULIHV", "AXLAY5V"},
+        {"alike", "ULIHK", "AXLAY5K"},
+        {"arrive", "AXRIHV", "AXRAY5V"},
+        {"inside", "IHNSIHD", "IHNSAY5D"},
+        {"outside", "AWTSIHD", "AWTSAY5D"},
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(overrides) / sizeof(overrides[0]); ++i) {
+        if (say_ascii_word_equals(word, length, overrides[i].word)) {
+            return &overrides[i];
+        }
+    }
+
+    return NULL;
+}
+
+static char *say_apply_pronunciation_overrides(const char *text, const char *reciter_output)
+{
+    say_string_builder_t builder;
+    const unsigned char *cursor = (const unsigned char *)text;
+    const char *search_cursor = reciter_output;
+    int applied = 0;
+
+    say_sb_init(&builder);
+
+    while (*cursor != '\0') {
+        if (isalpha(*cursor)) {
+            const unsigned char *start = cursor;
+            const say_pronunciation_override_t *override;
+            const char *match;
+
+            while (isalpha(*cursor)) {
+                ++cursor;
+            }
+
+            override = say_lookup_pronunciation_override(start, (size_t)(cursor - start));
+            if (override != NULL) {
+                match = strstr(search_cursor, override->reciter_phonemes);
+                if (match != NULL) {
+                    if (!say_sb_append_n(&builder, search_cursor, (size_t)(match - search_cursor)) ||
+                        !say_sb_append(&builder, override->fixed_phonemes)) {
+                        say_sb_free(&builder);
+                        return NULL;
+                    }
+                    search_cursor = match + strlen(override->reciter_phonemes);
+                    applied = 1;
+                }
+            }
+            continue;
+        }
+
+        ++cursor;
+    }
+
+    if (!applied) {
+        say_sb_free(&builder);
+        return say_strdup_local(reciter_output);
+    }
+
+    if (!say_sb_append(&builder, search_cursor)) {
+        say_sb_free(&builder);
+        return NULL;
+    }
+
+    return say_sb_take(&builder);
+}
+
+static char *say_normalize_text(const char *input)
+{
+    say_string_builder_t builder;
+    int in_space = 1;
+    const unsigned char *cursor = (const unsigned char *)input;
+
+    say_sb_init(&builder);
+
+    while (*cursor != '\0') {
+        unsigned char ch = *cursor++;
+        if (isdigit(ch)) {
+            const unsigned char *digit_start = cursor - 1;
+            const unsigned char *digit_end = digit_start;
+            unsigned char prev = digit_start > (const unsigned char *)input ? digit_start[-1] : '\0';
+            unsigned char next;
+
+            while (isdigit(*digit_end)) {
+                ++digit_end;
+            }
+            next = *digit_end;
+
+            if (!say_is_ascii_alpha_numeric(prev) && !say_is_ascii_alpha_numeric(next)) {
+                if (!say_append_expanded_number(&builder, digit_start, (size_t)(digit_end - digit_start), &in_space)) {
+                    say_sb_free(&builder);
+                    return NULL;
+                }
+                cursor = digit_end;
+                continue;
+            }
+        }
+
+        if (isspace(ch)) {
+            if (!in_space) {
+                if (!say_sb_append_n(&builder, " ", 1)) {
+                    say_sb_free(&builder);
+                    return NULL;
+                }
+                in_space = 1;
+            }
+            continue;
+        }
+        if (!say_sb_append_n(&builder, (const char *)&ch, 1)) {
+            say_sb_free(&builder);
+            return NULL;
+        }
+        in_space = 0;
+    }
+
+    while (builder.length > 0 && builder.data[builder.length - 1] == ' ') {
+        builder.data[--builder.length] = '\0';
+    }
+
+    if (builder.data == NULL) {
+        builder.data = malloc(1);
+        if (builder.data == NULL) {
+            return NULL;
+        }
+        builder.data[0] = '\0';
+    }
+
+    return say_sb_take(&builder);
+}
+
+static char *say_normalize_phonemes(const char *input)
+{
+    char *normalized = say_normalize_text(input);
+    size_t i;
+
+    if (normalized == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; normalized[i] != '\0'; ++i) {
+        normalized[i] = say_ascii_upper(normalized[i]);
+    }
+
+    return normalized;
+}
+
+static size_t say_find_split_point(const char *text)
+{
+    size_t length = strlen(text);
+    size_t midpoint = length / 2;
+    size_t left = midpoint;
+    size_t right = midpoint;
+
+    while (left > 0 || right < length) {
+        if (left > 0 && isspace((unsigned char)text[left])) {
+            return left;
+        }
+        if (right < length && isspace((unsigned char)text[right])) {
+            return right;
+        }
+        if (left > 0) {
+            --left;
+        }
+        if (right < length) {
+            ++right;
+        }
+    }
+
+    return length / 2;
 }
 
 static int say_append_small_number_words(say_string_builder_t *builder, unsigned int value)
@@ -675,111 +883,6 @@ static int say_append_expanded_number(
     return 1;
 }
 
-static char *say_normalize_text(const char *input)
-{
-    say_string_builder_t builder;
-    int in_space = 1;
-    const unsigned char *cursor = (const unsigned char *)input;
-
-    say_sb_init(&builder);
-
-    while (*cursor != '\0') {
-        unsigned char ch = *cursor++;
-        if (isdigit(ch)) {
-            const unsigned char *digit_start = cursor - 1;
-            const unsigned char *digit_end = digit_start;
-            unsigned char prev = digit_start > (const unsigned char *)input ? digit_start[-1] : '\0';
-            unsigned char next;
-
-            while (isdigit(*digit_end)) {
-                ++digit_end;
-            }
-            next = *digit_end;
-
-            if (!say_is_ascii_alpha_numeric(prev) && !say_is_ascii_alpha_numeric(next)) {
-                if (!say_append_expanded_number(&builder, digit_start, (size_t)(digit_end - digit_start), &in_space)) {
-                    say_sb_free(&builder);
-                    return NULL;
-                }
-                cursor = digit_end;
-                continue;
-            }
-        }
-
-        if (isspace(ch)) {
-            if (!in_space) {
-                if (!say_sb_append_n(&builder, " ", 1)) {
-                    say_sb_free(&builder);
-                    return NULL;
-                }
-                in_space = 1;
-            }
-            continue;
-        }
-
-        if (!say_sb_append_n(&builder, (const char *)&ch, 1)) {
-            say_sb_free(&builder);
-            return NULL;
-        }
-        in_space = 0;
-    }
-
-    while (builder.length > 0 && builder.data[builder.length - 1] == ' ') {
-        builder.data[--builder.length] = '\0';
-    }
-
-    if (builder.data == NULL) {
-        builder.data = malloc(1);
-        if (builder.data == NULL) {
-            return NULL;
-        }
-        builder.data[0] = '\0';
-    }
-
-    return say_sb_take(&builder);
-}
-
-static char *say_normalize_phonemes(const char *input)
-{
-    char *normalized = say_normalize_text(input);
-    size_t i;
-
-    if (normalized == NULL) {
-        return NULL;
-    }
-
-    for (i = 0; normalized[i] != '\0'; ++i) {
-        normalized[i] = say_ascii_upper(normalized[i]);
-    }
-
-    return normalized;
-}
-
-static size_t say_find_split_point(const char *text)
-{
-    size_t length = strlen(text);
-    size_t midpoint = length / 2;
-    size_t left = midpoint;
-    size_t right = midpoint;
-
-    while (left > 0 || right < length) {
-        if (left > 0 && isspace((unsigned char)text[left])) {
-            return left;
-        }
-        if (right < length && isspace((unsigned char)text[right])) {
-            return right;
-        }
-        if (left > 0) {
-            --left;
-        }
-        if (right < length) {
-            ++right;
-        }
-    }
-
-    return length / 2;
-}
-
 static int say_recite_text(const char *text, char **phonemes, int *truncated, char **error_message)
 {
     unsigned char buffer[256];
@@ -829,6 +932,7 @@ static int say_prepare_text_segment(
     char *normalized = NULL;
     char *left = NULL;
     char *right = NULL;
+    char *reciter_output = NULL;
     char *phonemes = NULL;
     say_chunk_t chunk;
     int truncated = 0;
@@ -847,13 +951,21 @@ static int say_prepare_text_segment(
         return 1;
     }
 
-    if (!say_recite_text(normalized, &phonemes, &truncated, error_message)) {
+    if (!say_recite_text(normalized, &reciter_output, &truncated, error_message)) {
         free(normalized);
         return 0;
     }
 
+    phonemes = say_apply_pronunciation_overrides(normalized, reciter_output);
+    if (phonemes == NULL) {
+        free(reciter_output);
+        free(normalized);
+        return say_set_errorf(error_message, "out of memory");
+    }
+
     if (!truncated) {
         chunk.text = normalized;
+        chunk.reciter_output = reciter_output;
         chunk.phonemes = phonemes;
         chunk.split_kind = say_strdup_local(split_kind);
         if (chunk.split_kind == NULL) {
@@ -867,8 +979,8 @@ static int say_prepare_text_segment(
         return 1;
     }
 
+    free(reciter_output);
     free(phonemes);
-    phonemes = NULL;
     length = strlen(normalized);
     split_at = say_find_split_point(normalized);
     if (split_at == 0 || split_at >= length) {
@@ -1336,7 +1448,7 @@ static int say_build_report(
 
         if (!options->phonemes) {
             if (!say_sb_appendf(&builder, "  normalized text: %s\n", chunk->text) ||
-                !say_sb_appendf(&builder, "  reciter output: %s\n", chunk->phonemes) ||
+                !say_sb_appendf(&builder, "  reciter output: %s\n", chunk->reciter_output) ||
                 !say_sb_appendf(&builder, "  final SAM phoneme string: %s\n", chunk->phonemes)) {
                 say_sb_free(&builder);
                 return say_set_errorf(error_message, "out of memory");

@@ -89,6 +89,16 @@ def main() -> int:
             report = run(repo, str(tts), raw, "--debug-report", "-", "--dry-run")
             assert f"Normalized text: {expanded}" in report.stdout
 
+        pronunciations = {
+            "alive": "AXLAY5V",
+            "outside": "AWTSAY5D",
+            "inside": "IHNSAY5D",
+            "arrive": "AXRAY5V",
+        }
+        for raw, phonemes in pronunciations.items():
+            report = run(repo, str(tts), raw, "--debug-report", "-", "--dry-run")
+            assert f"final SAM phoneme string:  {phonemes}" in report.stdout
+
         long_text = " ".join(["This is a chunking regression test sentence."] * 40)
         long_debug = run(repo, str(tts), long_text, "--debug-report", "-", "--dry-run")
         assert "Chunk 2" in long_debug.stdout
@@ -114,6 +124,8 @@ assert(info.bits_per_sample == 16)
 local report = say.debug_report('Debug library', { frame_ms = 7 })
 assert(report:find('Chunk 1', 1, true))
 assert(say.debug_report('2026'):find('Normalized text: two thousand twenty six', 1, true))
+assert(say.debug_report('alive'):find('final SAM phoneme string:  AXLAY5V', 1, true))
+assert(say.debug_report('outside'):find('final SAM phoneme string:  AWTSAY5D', 1, true))
 local defaults = say.default_options()
 assert(defaults.language == 'en')
 assert(defaults.sample_rate == 44100)
