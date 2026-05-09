@@ -91,9 +91,12 @@ def main() -> int:
 
         pronunciations = {
             "alive": "AXLAY5V",
+            "chaos": "KEY5AAS",
+            "july": "JUWLAY5",
             "outside": "AWTSAY5D",
             "inside": "IHNSAY5D",
             "arrive": "AXRAY5V",
+            "Aubervilliers": "OWBERVIYLYEY5",
         }
         for raw, phonemes in pronunciations.items():
             report = run(repo, str(tts), raw, "--debug-report", "-", "--dry-run")
@@ -125,7 +128,10 @@ local report = say.debug_report('Debug library', { frame_ms = 7 })
 assert(report:find('Chunk 1', 1, true))
 assert(say.debug_report('2026'):find('Normalized text: two thousand twenty six', 1, true))
 assert(say.debug_report('alive'):find('final SAM phoneme string:  AXLAY5V', 1, true))
+assert(say.debug_report('chaos'):find('final SAM phoneme string:  KEY5AAS', 1, true))
+assert(say.debug_report('july'):find('final SAM phoneme string:  JUWLAY5', 1, true))
 assert(say.debug_report('outside'):find('final SAM phoneme string:  AWTSAY5D', 1, true))
+assert(say.debug_report('Aubervilliers'):find('final SAM phoneme string:  OWBERVIYLYEY5', 1, true))
 local defaults = say.default_options()
 assert(defaults.language == 'en')
 assert(defaults.sample_rate == 44100)

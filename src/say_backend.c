@@ -583,7 +583,10 @@ static const say_pronunciation_override_t *say_lookup_pronunciation_override(con
         {"alive", "ULIHV", "AXLAY5V"},
         {"alike", "ULIHK", "AXLAY5K"},
         {"arrive", "AXRIHV", "AXRAY5V"},
+        {"aubervilliers", "AO4BERVIHLIYERZ", "OWBERVIYLYEY5"},
+        {"chaos", "CHAEAAZ", "KEY5AAS"},
         {"inside", "IHNSIHD", "IHNSAY5D"},
+        {"july", "JUWLIY", "JUWLAY5"},
         {"outside", "AWTSIHD", "AWTSAY5D"},
     };
     size_t i;
