@@ -157,7 +157,7 @@ static void RenderUnvoicedSample(unsigned short hi, unsigned char off, unsigned 
 //
 // Where X is a value from the table:
 //
-//   { 0x18, 0x1A, 0x17, 0x17, 0x17 };
+//   sampledConsonantZeroBitValues[].
 //
 // The index into this table is determined by masking off the lower
 // 3 bits from the SampledPhonemesTable:
@@ -191,7 +191,7 @@ void RenderSample(unsigned char *mem66, unsigned char consonantFlag, unsigned ch
         *mem66 = RenderVoicedSample(hi, *mem66, pitchl ^ 255);
 	}
 	else
-		RenderUnvoicedSample(hi, pitchl^255, tab48426[hibyte]);
+		RenderUnvoicedSample(hi, pitchl^255, sampledConsonantZeroBitValues[hibyte]);
 }
 
 
@@ -221,7 +221,7 @@ static void CreateFrames()
         else if (phoneme == PHONEME_QUESTION) AddInflection(FALLING_INFLECTION, X);
 
         // get the stress amount (more stress = higher pitch)
-        phase1 = tab47492[stressOutput[i] + 1];
+        phase1 = stressPitchOffsets[stressOutput[i] + 1];
 	
         // get number of frames to write
         phase2 = phonemeLengthOutput[i];

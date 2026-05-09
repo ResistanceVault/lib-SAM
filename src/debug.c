@@ -58,7 +58,7 @@ void PrintOutput(
 
 }
 
-extern unsigned char GetRuleByte(unsigned short mem62, unsigned char Y);
+extern unsigned char ReadReciterRuleByte(unsigned short rule_offset, unsigned char index);
 
 void PrintRule(unsigned short offset)
 {
@@ -67,7 +67,7 @@ void PrintRule(unsigned short offset)
 	printf("Applying rule: ");
 	do
 	{
-		A = GetRuleByte(offset, i);
+		A = ReadReciterRuleByte(offset, i);
 		if ((A&127) == '=') printf(" -> "); else printf("%c", A&127);
 		i++;
 	} while ((A&128)==0);

@@ -1,9 +1,9 @@
 #ifndef RENDERTABS_H
 #define RENDERTABS_H
 
-unsigned char tab48426[5] = { 0x18, 0x1A, 0x17, 0x17, 0x17 };
+unsigned char sampledConsonantZeroBitValues[5] = { 0x18, 0x1A, 0x17, 0x17, 0x17 };
 
-unsigned char tab47492[] = 
+unsigned char stressPitchOffsets[] = 
 {
 	0 , 0 , 0xE0 , 0xE6 , 0xEC , 0xF3 , 0xF9 , 0 , 
 	6 , 0xC , 6

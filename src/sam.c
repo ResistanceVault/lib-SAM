@@ -116,8 +116,8 @@ int SAMMain();
 void CopyStress();
 void SetPhonemeLength();
 void AdjustLengths();
-void Code41240();
-void Insert(unsigned char position, unsigned char mem60, unsigned char mem59, unsigned char mem58);
+void ExpandStopConsonants();
+void InsertPhoneme(unsigned char position, unsigned char phoneme, unsigned char length, unsigned char stress_value);
 void InsertBreath();
 void PrepareOutput();
 void SetMouthThroat(unsigned char mouth, unsigned char throat);
@@ -158,7 +158,7 @@ int SAMMain() {
 	CopyStress();
 	SetPhonemeLength();
 	AdjustLengths();
-	Code41240();
+	ExpandStopConsonants();
 	do {
 		if (phonemeindex[X] > 80) {
 			phonemeindex[X] = END;
@@ -217,7 +217,7 @@ void InsertBreath() {
                 if (index == 0) mem54 = pos;
             } else {
                 len = 0;
-                Insert(++pos, BREAK, 0, 0);
+                InsertPhoneme(++pos, BREAK, 0, 0);
             }
 		} else {
             pos = mem54;
@@ -226,7 +226,7 @@ void InsertBreath() {
             stress[pos] = 0;
 
             len = 0;
-            Insert(++pos, BREAK, 0, 0);
+            InsertPhoneme(++pos, BREAK, 0, 0);
         }
         ++pos;
 	}
@@ -273,7 +273,7 @@ void CopyStress() {
 	}
 }
 
-void Insert(unsigned char position/*var57*/, unsigned char mem60, unsigned char mem59, unsigned char mem58)
+void InsertPhoneme(unsigned char position, unsigned char phoneme, unsigned char length, unsigned char stress_value)
 {
 	int i;
 	for(i=253; i >= position; i--) // ML : always keep last safe-guarding 255	
@@ -283,9 +283,9 @@ void Insert(unsigned char position/*var57*/, unsigned char mem60, unsigned char 
 		stress[i+1]        = stress[i];
 	}
 
-	phonemeindex[position]  = mem60;
-	phonemeLength[position] = mem59;
-	stress[position]        = mem58;
+	phonemeindex[position]  = phoneme;
+	phonemeLength[position] = length;
+	stress[position]        = stress_value;
 }
 
 
@@ -417,7 +417,7 @@ void SetPhonemeLength() {
 	}
 }
 
-void Code41240() {
+void ExpandStopConsonants() {
 	unsigned char pos=0;
 
 	while(phonemeindex[pos] != END) {
@@ -434,8 +434,8 @@ void Code41240() {
                 }
                 
             }
-            Insert(pos+1, index+1, phonemeLengthTable[index+1], stress[pos]);
-            Insert(pos+2, index+2, phonemeLengthTable[index+2], stress[pos]);
+            InsertPhoneme(pos+1, index+1, phonemeLengthTable[index+1], stress[pos]);
+            InsertPhoneme(pos+2, index+2, phonemeLengthTable[index+2], stress[pos]);
             pos += 2;
         }
         ++pos;
@@ -443,11 +443,11 @@ void Code41240() {
 }
 
 
-void ChangeRule(unsigned char position, unsigned char mem60, const char * descr)
+void RewriteCurrentPhonemeToAXPair(unsigned char position, unsigned char trailing_phoneme, const char *description)
 {
-    if (debug) printf("RULE: %s\n",descr);
+    if (debug) printf("RULE: %s\n", description);
     phonemeindex[position] = 13; //rule;
-    Insert(position+1, mem60, 0, stress[position]);
+    InsertPhoneme(position + 1, trailing_phoneme, 0, stress[position]);
 }
 
 void drule(const char * str) {
@@ -505,12 +505,12 @@ void rule_alveolar_uw(unsigned char X) {
 
 void rule_ch(unsigned char X) {
     drule("CH -> CH CH+1");
-    Insert(X+1, 43, 0, stress[X]);
+    InsertPhoneme(X+1, 43, 0, stress[X]);
 }
 
 void rule_j(unsigned char X) {
     drule("J -> J J+1");
-    Insert(X+1, 45, 0, stress[X]);
+    InsertPhoneme(X+1, 45, 0, stress[X]);
 }
 
 void rule_g(unsigned char pos) {
@@ -545,7 +545,7 @@ void rule_dipthong(unsigned char p, unsigned short pf, unsigned char pos) {
     // Insert at WX or YX following, copying the stress
     if (A==20) drule("insert WX following dipthong NOT ending in IY sound");
     else if (A==21) drule("insert YX following dipthong ending in IY sound");
-    Insert(pos+1, A, 0, stress[pos]);
+    InsertPhoneme(pos+1, A, 0, stress[pos]);
                 
     if (p == 53) rule_alveolar_uw(pos); // Example: NEW, DEW, SUE, ZOO, THOO, TOO
     else if (p == 42) rule_ch(pos);     // Example: CHEW
@@ -573,9 +573,9 @@ void Parser2() {
         prior = phonemeindex[pos-1];
 
         if ((pf & FLAG_DIPTHONG)) rule_dipthong(p, pf, pos);
-        else if (p == 78) ChangeRule(pos, 24, "UL -> AX L"); // Example: MEDDLE
-        else if (p == 79) ChangeRule(pos, 27, "UM -> AX M"); // Example: ASTRONOMY
-        else if (p == 80) ChangeRule(pos, 28, "UN -> AX N"); // Example: FUNCTION
+        else if (p == 78) RewriteCurrentPhonemeToAXPair(pos, 24, "UL -> AX L"); // Example: MEDDLE
+        else if (p == 79) RewriteCurrentPhonemeToAXPair(pos, 27, "UM -> AX M"); // Example: ASTRONOMY
+        else if (p == 80) RewriteCurrentPhonemeToAXPair(pos, 28, "UN -> AX N"); // Example: FUNCTION
         else if ((pf & FLAG_VOWEL) && stress[pos]) {
             // RULE:
             //       <STRESSED VOWEL> <SILENCE> <STRESSED VOWEL> -> <STRESSED VOWEL> <SILENCE> Q <VOWEL>
@@ -584,7 +584,7 @@ void Parser2() {
                 p = phonemeindex[pos+2];
                 if (p!=END && (flags[p] & FLAG_VOWEL) && stress[pos+2]) {
                     drule("Insert glottal stop between two stressed vowels with space between them");
-                    Insert(pos+2, 31, 0, 0); // 31 = 'Q'
+                    InsertPhoneme(pos+2, 31, 0, 0); // 31 = 'Q'
                 }
             }
         } else if (p == pR) { // RULES FOR PHONEMES BEFORE R
